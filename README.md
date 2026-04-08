@@ -13,9 +13,9 @@ The game never stops. It just keeps changing.
 
 ## How to play
 
-in one terminal start a Claude session running and active- tell it to refer to this readme and that it will be modifying the game in real time as per instructions.   
+In one terminal, start a Claude Code session running, and tell it to refer to this readme and that it will be modifying the game in real time as per the instructions in the readme.   
 
-then in another:  
+Then in another, start and play the game:  
   
 ```bash
 python3 -m venv venv
