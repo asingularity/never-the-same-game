@@ -27,13 +27,109 @@ Controls:
 - **Space** — action (stun, shoot, etc. — changes as the game evolves)
 - **q** — quit
 
-## How it works
+## How to start a session (instructions for Claude)
 
-The project has two participants: you (the player) and Claude (the game designer).
+This section is for bootstrapping. If you are Claude Code and a human has just
+cloned this repo and asked you to play, here is what you do:
 
-You run `game.py` in your terminal. In a separate session, Claude is running in
-Claude Code. When you say "go", Claude starts editing `rules.py` — the file that
-contains all game logic — and the running game hot-reloads those changes instantly.
+### 1. Read the key files
+
+- **`meta_rules.md`** — The governing rules for how you mutate the game. Read
+  this first. It defines the four types of changes and their cadences.
+- **`mutation_plan.yaml`** — Your roadmap. Contains the current transition
+  (e.g., chase → snake), the list of steps, and your progress. If this file
+  is missing or completed, generate a new plan.
+- **`rules.py`** — The game logic you will be editing. It is organized into
+  named slots delimited by `# ── SLOT:<NAME> ──` comments. Each slot is one
+  independently replaceable section (player movement, enemy AI, scoring, etc.).
+
+### 2. Set up and have the player start the game
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python game.py
+```
+
+Tell the player to run the above in their terminal (70+ columns wide), then
+tell you "go" when they are ready.
+
+### 3. Your execution loop (when the player says "go")
+
+Run this loop continuously, making one edit every ~8 seconds:
+
+```
+LOOP:
+  1. READ mutation_plan.yaml → find the next step (first where done: false)
+  2. READ state.json → check player score, lives, tick, position
+  3. ADAPT → if player is struggling (low lives, low score rate), make the
+     next edit easier or insert a Type 1 mercy tweak first
+  4. EDIT rules.py → change ONLY the slot specified by the step. One slot,
+     one dimension, one edit.
+  5. VERIFY → run: python3 -c "import py_compile; py_compile.compile('rules.py', doraise=True)"
+     If it fails, fix immediately.
+  6. UPDATE sidebar → edit state["_desc"] in SLOT:RELOAD to reflect the change
+  7. WRITE announce.txt → with the step's announce message (if any)
+  8. MARK DONE → update mutation_plan.yaml, set the step's done: true,
+     increment current_step
+  9. REPEAT
+```
+
+### 4. When a transition completes
+
+When all steps in the current transition are done:
+- Update `mutation_plan.yaml`: set `current_game` to what was `target_game`
+- Launch a **background research agent** to plan the NEXT transition (what
+  game type to morph into, what the steps are). The agent should:
+  - Think of a creative new game type that is very different from both the
+    current game and the previous one
+  - Break the transition into ~10 steps following the dimension ordering:
+    visual → board → mechanic → controls → scoring
+  - Append the new transition to `mutation_plan.yaml`
+- Continue executing — start the new transition's steps immediately
+
+### 5. Rules for edits
+
+These rules come from `meta_rules.md`:
+
+- **One dimension per edit.** Each edit changes one of: game visual, game
+  mechanic, player visual, player controls, or scoring. Never more than one.
+- **Smooth and continuous.** Even a full game type change unfolds over ~60
+  seconds via ~10 small edits. No sudden jumps.
+- **Always morphing.** There should always be a Type 4 transition in progress.
+  Type 1-3 changes are layered in between the major steps.
+- **Sidebar reflects reality.** After every edit, the sidebar (right side of
+  game area) must describe the current rules accurately.
+- **Adaptive difficulty.** Read `state.json` to see how the player is doing.
+  If they're dying frequently, ease up. If they're cruising, increase challenge.
+
+### 6. The slot system in `rules.py`
+
+`rules.py` is organized into named slots. Each slot is delimited by a comment
+like `# ── SLOT:PLAYER_MOVEMENT ──`. To make an edit, find the target slot
+and replace its contents (everything between its delimiter and the next slot's
+delimiter).
+
+| Slot | What it controls |
+|------|-----------------|
+| `CONFIG` | `get_config()` — tick rate, grid size, lives |
+| `INIT` | `_ensure_init()` — initial state setup for fresh games |
+| `HELPERS` | `_empty()` — utility functions |
+| `RELOAD` | `on_reload()` — state migration on hot-reload. **Every new state key must get a `setdefault` here.** |
+| `PLAYER_MOVEMENT` | `_move_player()` — how arrow keys translate to movement |
+| `PLAYER_ACTION` | `_player_action()` — what space bar does |
+| `ENEMY_MOVEMENT` | `_move_enemies()` — enemy AI and behavior |
+| `COLLISION` | `_check_enemy_collision()` — what kills the player |
+| `ITEMS_SCORING` | `_handle_items()` — item collection, spawning, scoring |
+| `MAIN_TICK` | `on_tick()` — orchestrator that calls the above functions |
+| `HUD` | `render_hud()` — the top-line display |
+| `GRID_RENDERING` | `_build_grid()` — how the game board looks |
+
+**Critical rule:** Any time you add a new state key in any slot, you MUST also
+add `state.setdefault("key", default)` in `SLOT:RELOAD`. Otherwise the running
+game will crash on hot-reload because the key won't exist in the persisted state.
+
+## How it works (technical)
 
 Three files bridge the player and the AI:
 
@@ -104,18 +200,23 @@ dependency) and can be unit-tested directly. Curses is isolated to the
 
 ### The rules (`rules.py`)
 
-This is the file Claude edits live. It exports:
+This is the file Claude edits live. Organized into named slots (see the slot
+table above). Exports:
 
 - `get_config()` — Returns a dict of settings (grid size, tick rate, lives, etc.)
-- `on_tick(state, cfg)` — Called every frame. Delegates to isolated sub-functions
-  for player movement, player action, enemy AI, items/scoring, and grid rendering.
-  Each sub-function can be surgically edited independently.
-- `on_reload(state, prev_cfg, cfg)` — Called when the file is hot-reloaded.
-  Ensures new state keys exist with safe defaults.
+- `on_tick(state, cfg)` — Called every frame. Delegates to isolated sub-functions.
+- `on_reload(state, prev_cfg, cfg)` — Called on hot-reload. Migrates state.
 - `render_hud(state, cfg)` — Custom HUD line.
 
-The rules module builds `state["grid"]` with a sidebar appended to each row,
-showing the current rules in a few words.
+### The mutation plan (`mutation_plan.yaml`)
+
+Claude's roadmap. Tracks:
+- Current game type and target game type
+- An ordered list of transition steps (which slot, which dimension, what to change)
+- Progress (which steps are done)
+
+Claude reads this before each edit, executes the next step, then updates it.
+When a transition completes, a background research agent plans the next one.
 
 ### State
 
@@ -141,35 +242,28 @@ The build process:
 
 1. **Plan** — Wrote `PLAN.md` defining the architecture, the three-file
    communication protocol, and the separation between engine (dumb loop) and
-   rules (all logic). The key insight was that `importlib` hot-reloading +
-   file mtime watching is a natural bridge between Claude Code's file-editing
-   tools and a running Python process.
+   rules (all logic).
 
-2. **Engine** — Built `game.py` with a clean separation: pure functions for
-   rules loading, config normalization, file watching, state management, input
-   handling, and tick processing — all testable without curses. The curses code
-   is a thin ~30-line rendering layer on top.
+2. **Engine** — Built `game.py` with pure functions for rules loading, config
+   normalization, file watching, state management, input handling, and tick
+   processing — all testable without curses.
 
-3. **Rules** — Built the initial `rules.py` as a chase game (collect stars,
-   avoid ghosts, space to stun). Structured with isolated sub-functions for
-   each game aspect (movement, action, enemies, items, rendering) so that
-   Claude can surgically edit one dimension at a time during play.
+3. **Rules** — Built `rules.py` with named slot delimiters so Claude can
+   surgically edit one section at a time during play.
 
 4. **Meta-rules** — Defined `meta_rules.md` specifying how Claude should evolve
    the game: four types of changes at different cadences, smooth continuous
    transitions, one dimension changing at a time, adaptive difficulty, and a
    sidebar showing current rules.
 
-5. **Tests** — 53 unit tests covering config normalization, rules loading,
-   hot-reload (including state persistence across reloads and broken-file
-   resilience), input handling, game logic (movement, wall collision, item
-   collection, enemy contact, stun mechanics, game over), announce reading,
-   state.json serialization, and tick processing. All tests run against pure
-   functions — no curses mocking needed.
+5. **Mutation plan** — Created `mutation_plan.yaml` as Claude's working roadmap.
+   Pre-planned the first two transitions (chase → snake → platformer) with ~10
+   steps each. Simulated the transitions to verify each step produces valid code.
 
-6. **Live play** — Ran the game, said "go", and Claude started continuously
-   editing `rules.py` in real time. The hot-reload worked — each edit appeared
-   in the running game within a frame.
+6. **Tests** — 53 unit tests covering config normalization, rules loading,
+   hot-reload (including state persistence across reloads and broken-file
+   resilience), input handling, game logic, announce reading, state.json
+   serialization, and tick processing. All tests run against pure functions.
 
 ## Running tests
 
@@ -183,9 +277,11 @@ python -m unittest test_game -v
 ```
 game1/
 ├── README.md                       ← this file
+├── LICENSE                         ← MIT license
 ├── PLAN.md                         ← architecture and design document
 ├── meta_rules.md                   ← rules for how Claude mutates the game
-├── game.py                         ← the engine (you run this)
+├── mutation_plan.yaml              ← Claude's transition roadmap and progress
+├── game.py                         ← the engine (player runs this)
 ├── rules.py                        ← game logic (Claude edits this live)
 ├── announce.txt                    ← Claude's in-game messages
 ├── state.json                      ← game state (written by engine, read by Claude)

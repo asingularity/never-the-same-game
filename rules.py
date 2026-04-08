@@ -1,6 +1,7 @@
 """Live-mutating game. Claude edits this file continuously during play.
 
-Each edit changes ONE thing. The cumulative effect is smooth game evolution.
+Each section is delimited by # ── SLOT:<NAME> ── comments.
+Claude replaces ONE slot at a time. The cumulative effect is smooth game evolution.
 """
 
 import random
@@ -8,6 +9,7 @@ import random
 SIDEBAR_W = 24
 SEP = " | "
 
+# ── SLOT:CONFIG ──────────────────────────────────────────────────────
 
 def get_config():
     return {
@@ -18,6 +20,7 @@ def get_config():
         "lives": 3,
     }
 
+# ── SLOT:INIT ────────────────────────────────────────────────────────
 
 def _ensure_init(state, cfg):
     if "_init" in state:
@@ -25,8 +28,7 @@ def _ensure_init(state, cfg):
     rng = random.Random()
     state["_rng"] = rng
     w, h = cfg["width"], cfg["height"]
-
-    # Walls: border only, few interior
+    # Walls: border + sparse interior
     walls = set()
     for x in range(w):
         walls.add((x, 0)); walls.add((x, h - 1))
@@ -37,24 +39,23 @@ def _ensure_init(state, cfg):
             if rng.random() < 0.03:
                 walls.add((x, y))
     state["walls"] = walls
-
     # Player
     state["player"] = _empty(state, rng, cfg)
     state["player_char"] = "@"
-    state["trail"] = []  # for snake-like mechanics later
-
+    state["trail"] = []
+    state["_trail_len"] = 0
+    state["_last_dir"] = (1, 0)
+    state["_vy"] = 0
     # Enemies
     state["enemies"] = []
     for _ in range(3):
         pos = _empty(state, rng, cfg)
-        state["enemies"].append({"x": pos[0], "y": pos[1], "stun": 0})
-
+        state["enemies"].append({"x": pos[0], "y": pos[1], "stun": 0, "dir": 1})
     # Items
     state["items"] = set()
     for _ in range(5):
         pos = _empty(state, rng, cfg)
         state["items"].add(pos)
-
     # Misc
     state["invuln"] = 0
     state["combo"] = 0
@@ -62,7 +63,7 @@ def _ensure_init(state, cfg):
     state["bullets"] = []
     state["shoot_cooldown"] = 0
     state["powerups"] = set()
-
+    state["speed_timer"] = 0
     # Sidebar
     state["_desc"] = [
         "CURRENT RULES:",
@@ -77,9 +78,9 @@ def _ensure_init(state, cfg):
         "Combo: chain * fast",
         "+1 life per 200 pts",
     ]
-
     state["_init"] = True
 
+# ── SLOT:HELPERS ─────────────────────────────────────────────────────
 
 def _empty(state, rng, cfg):
     w, h = cfg["width"], cfg["height"]
@@ -87,25 +88,41 @@ def _empty(state, rng, cfg):
     occ |= {(e["x"], e["y"]) for e in state.get("enemies", [])}
     p = state.get("player")
     for _ in range(300):
-        x, y = rng.randint(1, w-2), rng.randint(1, h-2)
+        x, y = rng.randint(1, w - 2), rng.randint(1, h - 2)
         if (x, y) not in occ and (x, y) != p:
             return (x, y)
     return (1, 1)
 
+# ── SLOT:RELOAD ──────────────────────────────────────────────────────
 
 def on_reload(state, prev_cfg, cfg):
     state.setdefault("trail", [])
+    state.setdefault("_trail_len", 0)
+    state.setdefault("_last_dir", (1, 0))
+    state.setdefault("_vy", 0)
     state.setdefault("bullets", [])
     state.setdefault("shoot_cooldown", 0)
+    state.setdefault("speed_timer", 0)
     state.setdefault("powerups", set())
     state.setdefault("player_char", "@")
     state.setdefault("combo", 0)
     state.setdefault("combo_timer", 0)
     state.setdefault("invuln", 0)
+    state.setdefault("items", set())
+    state.setdefault("enemies", [])
     state.setdefault("_desc", ["RULES:", "Reloading..."])
+    # Re-populate if empty
+    rng = state.get("_rng", random.Random())
+    if not state.get("enemies"):
+        for _ in range(3):
+            pos = _empty(state, rng, cfg)
+            state["enemies"].append({"x": pos[0], "y": pos[1], "stun": 0, "dir": 1})
+    if not state.get("items"):
+        for _ in range(5):
+            pos = _empty(state, rng, cfg)
+            state["items"].add(pos)
 
-
-# ── PLAYER MOVEMENT ──────────────────────────────────────────────────
+# ── SLOT:PLAYER_MOVEMENT ────────────────────────────────────────────
 
 def _move_player(state, cfg):
     dx, dy = state.get("input_dir", (0, 0))
@@ -116,8 +133,7 @@ def _move_player(state, cfg):
     if (nx, ny) not in state["walls"]:
         state["player"] = (nx, ny)
 
-
-# ── PLAYER ACTION (space bar) ────────────────────────────────────────
+# ── SLOT:PLAYER_ACTION ──────────────────────────────────────────────
 
 def _player_action(state, cfg):
     if not state.get("space"):
@@ -128,8 +144,7 @@ def _player_action(state, cfg):
         if abs(e["x"] - px) + abs(e["y"] - py) <= 3:
             e["stun"] = 10
 
-
-# ── ENEMY MOVEMENT ───────────────────────────────────────────────────
+# ── SLOT:ENEMY_MOVEMENT ─────────────────────────────────────────────
 
 def _move_enemies(state, cfg):
     if state["tick"] % 2 != 0:
@@ -143,23 +158,22 @@ def _move_enemies(state, cfg):
             continue
         x, y = e["x"], e["y"]
         if rng.random() < (0.4 if mercy else 0.25):
-            for ddx, ddy in rng.sample([(-1,0),(1,0),(0,-1),(0,1)], 4):
-                if (x+ddx, y+ddy) not in state["walls"]:
-                    e["x"], e["y"] = x+ddx, y+ddy
+            for ddx, ddy in rng.sample([(-1, 0), (1, 0), (0, -1), (0, 1)], 4):
+                if (x + ddx, y + ddy) not in state["walls"]:
+                    e["x"], e["y"] = x + ddx, y + ddy
                     break
             continue
         opts = []
-        for ddx, ddy in [(-1,0),(1,0),(0,-1),(0,1)]:
-            nx, ny = x+ddx, y+ddy
+        for ddx, ddy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + ddx, y + ddy
             if (nx, ny) not in state["walls"]:
-                opts.append((abs(nx-px)+abs(ny-py), ddx, ddy))
+                opts.append((abs(nx - px) + abs(ny - py), ddx, ddy))
         if opts:
             opts.sort(reverse=mercy)
             _, ddx, ddy = opts[0]
-            e["x"], e["y"] = x+ddx, y+ddy
+            e["x"], e["y"] = x + ddx, y + ddy
 
-
-# ── COLLISION ────────────────────────────────────────────────────────
+# ── SLOT:COLLISION ───────────────────────────────────────────────────
 
 def _check_enemy_collision(state, cfg):
     px, py = state["player"]
@@ -174,8 +188,7 @@ def _check_enemy_collision(state, cfg):
             return True
     return False
 
-
-# ── ITEMS & SCORING ──────────────────────────────────────────────────
+# ── SLOT:ITEMS_SCORING ──────────────────────────────────────────────
 
 def _handle_items(state, cfg):
     rng = state["_rng"]
@@ -202,14 +215,15 @@ def _handle_items(state, cfg):
         state["lives"] = state.get("lives", 1) + 1
         state["_last_life"] = m
 
-
-# ── MAIN TICK ────────────────────────────────────────────────────────
+# ── SLOT:MAIN_TICK ───────────────────────────────────────────────────
 
 def on_tick(state, cfg):
     _ensure_init(state, cfg)
     state["tick"] = state.get("tick", 0) + 1
     if state.get("invuln", 0) > 0:
         state["invuln"] -= 1
+    if state.get("speed_timer", 0) > 0:
+        state["speed_timer"] -= 1
 
     _move_player(state, cfg)
     _player_action(state, cfg)
@@ -220,16 +234,14 @@ def on_tick(state, cfg):
 
     _build_grid(state, cfg)
 
-
-# ── HUD ──────────────────────────────────────────────────────────────
+# ── SLOT:HUD ────────────────────────────────────────────────────────
 
 def render_hud(state, cfg):
     t = cfg.get("title", "Game")
-    c = f" x{state.get('combo',0)}" if state.get("combo", 0) > 1 else ""
-    return f"{t}  Score:{state.get('score',0)}  Lives:{state.get('lives',0)}{c}"
+    c = f" x{state.get('combo', 0)}" if state.get("combo", 0) > 1 else ""
+    return f"{t}  Score:{state.get('score', 0)}  Lives:{state.get('lives', 0)}{c}"
 
-
-# ── GRID RENDERING ───────────────────────────────────────────────────
+# ── SLOT:GRID_RENDERING ─────────────────────────────────────────────
 
 def _build_grid(state, cfg):
     w, h = cfg["width"], cfg["height"]

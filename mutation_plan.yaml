@@ -1,0 +1,211 @@
+meta:
+  current_game: "chase"
+  target_game: "snake"
+  current_step: 0
+  status: "ready"
+
+  next_target: "platformer"
+  research_needed: true
+
+transitions:
+  chase_to_snake:
+    steps:
+      - id: 0
+        slot: "PLAYER_MOVEMENT"
+        dimension: "visual"
+        type: 1
+        description: "Player char becomes directional arrows > < ^ v"
+        sidebar_line: "You are > < ^ v"
+        announce: "You feel a direction..."
+        done: false
+
+      - id: 1
+        slot: "ITEMS_SCORING"
+        dimension: "scoring"
+        type: 1
+        description: "Trail grows +2 per food instead of +1"
+        sidebar_line: "Eat * = +2 trail"
+        announce: "Your tail grows faster..."
+        done: false
+
+      - id: 2
+        slot: "PLAYER_MOVEMENT"
+        dimension: "mechanic"
+        type: 3
+        description: "Auto-move: player keeps moving in last direction. Trail appended on move."
+        sidebar_line: "Auto-move: ON"
+        announce: "You can't stop moving!"
+        done: false
+
+      - id: 3
+        slot: "CONFIG"
+        dimension: "mechanic"
+        type: 1
+        description: "Slow tick from 120ms to 150ms for snake pacing"
+        sidebar_line: "Speed: moderate"
+        announce: ""
+        done: false
+
+      - id: 4
+        slot: "COLLISION"
+        dimension: "mechanic"
+        type: 3
+        description: "Self-collision: hitting your own trail kills you"
+        sidebar_line: "DANGER: tail is deadly"
+        announce: "Watch your tail -- it's deadly now!"
+        done: false
+
+      - id: 5
+        slot: "ENEMY_MOVEMENT"
+        dimension: "mechanic"
+        type: 1
+        description: "Reduce enemies to 1, move every 4th tick"
+        sidebar_line: "Ghosts: 1, slow"
+        announce: "The ghosts are fading..."
+        done: false
+
+      - id: 6
+        slot: "INIT"
+        dimension: "board"
+        type: 2
+        description: "Remove interior walls via on_reload, open arena"
+        sidebar_line: "Open arena"
+        announce: "The walls crumble away..."
+        done: false
+
+      - id: 7
+        slot: "ENEMY_MOVEMENT"
+        dimension: "mechanic"
+        type: 3
+        description: "Remove all enemies entirely. _move_enemies becomes pass."
+        sidebar_line: "No enemies"
+        announce: "The ghosts are gone. Just you and your tail."
+        done: false
+
+      - id: 8
+        slot: "HUD"
+        dimension: "scoring"
+        type: 2
+        description: "Score = trail length. Title becomes Snake."
+        sidebar_line: "Score = tail length"
+        announce: "Your length IS your score."
+        done: false
+
+      - id: 9
+        slot: "PLAYER_ACTION"
+        dimension: "controls"
+        type: 2
+        description: "Disable stun. Space = temporary speed boost."
+        sidebar_line: "Space: speed boost"
+        announce: "Space gives a burst of speed!"
+        done: false
+
+      - id: 10
+        slot: "GRID_RENDERING"
+        dimension: "visual"
+        type: 1
+        description: "Wall char becomes =, food becomes +, bg becomes space"
+        sidebar_line: "GAME: SNAKE"
+        announce: "Welcome to Snake."
+        done: false
+
+  snake_to_platformer:
+    steps:
+      - id: 0
+        slot: "PLAYER_MOVEMENT"
+        dimension: "mechanic"
+        type: 3
+        description: "Disable auto-move. Player only moves on input."
+        sidebar_line: "Auto-move: OFF"
+        announce: "You slow down... gravity stirs."
+        done: false
+
+      - id: 1
+        slot: "PLAYER_MOVEMENT"
+        dimension: "mechanic"
+        type: 3
+        description: "Add gravity: player falls if nothing below"
+        sidebar_line: "GRAVITY: ON"
+        announce: "Gravity pulls you down!"
+        done: false
+
+      - id: 2
+        slot: "PLAYER_MOVEMENT"
+        dimension: "mechanic"
+        type: 1
+        description: "Remove trail entirely. Trail len = 0."
+        sidebar_line: "Trail: gone"
+        announce: "Your tail dissolves..."
+        done: false
+
+      - id: 3
+        slot: "INIT"
+        dimension: "board"
+        type: 2
+        description: "Generate platforms: horizontal wall segments at heights"
+        sidebar_line: "Platforms appeared!"
+        announce: "Platforms materialize around you..."
+        done: false
+
+      - id: 4
+        slot: "PLAYER_MOVEMENT"
+        dimension: "controls"
+        type: 3
+        description: "Up arrow = jump (multi-tick impulse). L/R = horizontal."
+        sidebar_line: "Up = JUMP"
+        announce: "You can jump! Press UP to leap."
+        done: false
+
+      - id: 5
+        slot: "GRID_RENDERING"
+        dimension: "visual"
+        type: 1
+        description: "Walls = for platforms, bg space, title Platformer"
+        sidebar_line: "GAME: PLATFORMER"
+        announce: ""
+        done: false
+
+      - id: 6
+        slot: "ITEMS_SCORING"
+        dimension: "scoring"
+        type: 2
+        description: "Items on platforms only. Flat 10pts. No combo/trail scoring."
+        sidebar_line: "Collect * = 10 pts"
+        announce: "Stars on the platforms!"
+        done: false
+
+      - id: 7
+        slot: "ENEMY_MOVEMENT"
+        dimension: "mechanic"
+        type: 2
+        description: "Enemies patrol platforms, walking back and forth"
+        sidebar_line: "Guards patrol platforms"
+        announce: "Watch out -- guards on the platforms!"
+        done: false
+
+      - id: 8
+        slot: "PLAYER_ACTION"
+        dimension: "controls"
+        type: 3
+        description: "Space while falling on enemy = stomp (destroy + bounce)"
+        sidebar_line: "Space (falling) = stomp"
+        announce: "Jump on enemies to stomp them!"
+        done: false
+
+      - id: 9
+        slot: "CONFIG"
+        dimension: "mechanic"
+        type: 1
+        description: "Speed up to 100ms tick. More enemies."
+        sidebar_line: "Speed: fast"
+        announce: "Things are speeding up..."
+        done: false
+
+      - id: 10
+        slot: "HUD"
+        dimension: "scoring"
+        type: 2
+        description: "Height bonus scoring. Higher platforms = more pts."
+        sidebar_line: "Higher = more pts!"
+        announce: "Welcome to Platformer. Jump high for bonus!"
+        done: false
