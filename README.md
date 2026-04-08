@@ -9,7 +9,7 @@ The game never stops. It just keeps changing.
 
 "I understand now. My fundamental mistake was trying to encode transitions in the code. I am the transition system. I should make many small rapid edits, each changing ONE dimension, every few seconds. The cumulative effect IS the smooth morph." - Claude Opus
 
-![Claude editing game rules in real time while the player plays](docs/screenshot_example.png)
+<img src="docs/screenshot_example.png" alt="Claude editing game rules in real time while the player plays" width="300">
 
 ## How to play
 
